@@ -229,7 +229,17 @@ public class CrmUserService {
                 + LOGIN_ID_MAX_ATTEMPTS + " attempts");
     }
 
-    @Transactional
+    /**
+     * Process the uploaded CSV row-by-row. Intentionally NOT wrapped in @Transactional:
+     * a 10K-row import as a single transaction holds every row-lock until the final
+     * commit, so if the client disconnects mid-import (browser timeout / refresh)
+     * the orphaned transaction blocks the retry attempt → 'Lock wait timeout
+     * exceeded' (MySQL innodb_lock_wait_timeout default 50s) → 500.
+     *
+     * Each {@link #processRow} call's {@code repository.save(u)} runs in its own
+     * short Spring-Data-managed transaction. Per-row commit boundaries make the
+     * import retry-safe, free of long-held locks, and bounded in memory.
+     */
     public CsvImportResult importCsv(InputStream in) throws IOException {
         // Reset the live progress counter so the frontend poller starts from 0.
         importProgress.set(0);
